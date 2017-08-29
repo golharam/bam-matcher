@@ -215,6 +215,31 @@ def compareGenotypes(var_list, var_list2, intersection, alternate_chroms, def_to
                                                                      allele_subset)
     return results
 
+def complareTwoSamples(sample1, sample2):
+    logger.info("Comparing %s - %s", sample1["name"], sample2["name"])
+    # Get a list of variants that pass in sample 1
+    tsv1 = os.path.join(config.cache_dir, sample1["name"] + ".tsv")
+    var_list = get_tsv_variants(tsv1, config.dp_threshold)
+    # then parse second tsv file to get list of variants that passed in both samples
+    tsv2 = os.path.join(config.cache_dir, sample2["name"] + ".tsv")
+    var_list2 = get_tsv_variants(tsv2, config.dp_threshold)
+
+    intersection = getIntersectingVariants(var_list, var_list2,
+                                           def_to_alt, alt_to_def)
+    
+    # compare the genotypes
+    results = compareGenotypes(var_list, var_list2, intersection,
+                               alternate_chroms, def_to_alt)
+    logger.info("\t%.4f / %d - %s", results['frac_common'], results['total_compared'],
+                results['short_judgement'])
+    writeSampleComparisonReport(sample1["name"], sample2["name"], config, results)
+
+    # save to grand matrix
+    frac_common_matrix[sample1["name"]][sample2["name"]] = results['frac_common']
+    total_compared_matrix[sample1["name"]][sample2["name"]] = results['total_compared']
+    short_judgement[sample1["name"]][sample2["name"]] = results['short_judgement']
+    judgement[sample1["name"]][sample2["name"]] = results['judgement']
+
 def compareSamples(sampleSet1, sampleSet2, config):
     ''' Compare all the samples against each other '''
     if config.chromosome_map:
@@ -223,6 +248,7 @@ def compareSamples(sampleSet1, sampleSet2, config):
     else:
         default_chroms, alternate_chroms, def_to_alt, alt_to_def = None, None, None, None
 
+    jobs = {}
     frac_common_matrix = {}
     total_compared_matrix = {}
     short_judgement = {}
@@ -243,36 +269,21 @@ def compareSamples(sampleSet1, sampleSet2, config):
         logger.error("Not all samples genotyped.")
         return False
 
+    pool = multiprocessing.pool.ThreadPool(config.max_jobs)
+
     for sample1 in sampleSet1:
+        if sample1["name"] not in frac_common_matrix:
+            jobs[samples1["name"]] = {}
+            frac_common_matrix[sample1["name"]] = {}
+            total_compared_matrix[sample1["name"]] = {}
+            short_judgement[sample1["name"]] = {}
+            judgement[sample1["name"]] = {}
+
         for sample2 in sampleSet2:
-            logger.info("Comparing %s - %s", sample1["name"], sample2["name"])
-            # Get a list of variants that pass in sample 1
-            tsv1 = os.path.join(config.cache_dir, sample1["name"] + ".tsv")
-            var_list = get_tsv_variants(tsv1, config.dp_threshold)
-            # then parse second tsv file to get list of variants that passed in both samples
-            tsv2 = os.path.join(config.cache_dir, sample2["name"] + ".tsv")
-            var_list2 = get_tsv_variants(tsv2, config.dp_threshold)
-
-            intersection = getIntersectingVariants(var_list, var_list2,
-                                                   def_to_alt, alt_to_def)
-
-            # compare the genotypes
-            results = compareGenotypes(var_list, var_list2, intersection,
-                                       alternate_chroms, def_to_alt)
-            logger.info("\t%.4f / %d - %s", results['frac_common'], results['total_compared'],
-                        results['short_judgement'])
-            writeSampleComparisonReport(sample1["name"], sample2["name"], config, results)
-
-            # save to grand matrix
-            if sample1["name"] not in frac_common_matrix:
-                frac_common_matrix[sample1["name"]] = {}
-                total_compared_matrix[sample1["name"]] = {}
-                short_judgement[sample1["name"]] = {}
-                judgement[sample1["name"]] = {}
-            frac_common_matrix[sample1["name"]][sample2["name"]] = results['frac_common']
-            total_compared_matrix[sample1["name"]][sample2["name"]] = results['total_compared']
-            short_judgement[sample1["name"]][sample2["name"]] = results['short_judgement']
-            judgement[sample1["name"]][sample2["name"]] = results['judgement']
+            pool.apply_async(compareTwoSamples, (sample1,
+                                                  sample2))
+    pool.close()
+    pool.join()
     writeSimilarityMatrix(config, sampleSet1, sampleSet2, frac_common_matrix,
                           total_compared_matrix, judgement)
     return True
