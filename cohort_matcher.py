@@ -13,7 +13,7 @@ import pysam
 import vcf
 from fisher import pvalue
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("cohort-matcher")
 __version__ = "1.0"
 
 def checkConfig(config):
@@ -332,9 +332,16 @@ def downloadBAMFile(bamFile, config):
 def downloadFileFromAmazon(srcFile, destDirectory, config):
     ''' Download file from S3 '''
     if isFileInAmazon(srcFile, config) is False:
+        logger.error("%s is not found.", srcFile)
         return None
 
-    cmd = [config.aws, "s3", "cp", srcFile, destDirectory]
+    # Make sure we can write to the destDirectory
+    if os.access(destDirectory, os.W_OK) is False:
+        logger.error("Cannot write to %s.", destDirectory)
+        return None
+
+    localFile = os.path.join(destDirectory, os.path.basename(srcFile))
+    cmd = [config.aws, "s3", "cp", srcFile, localFile]
     logger.info("Downloading file: %s", srcFile)
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = p.communicate()
@@ -344,9 +351,9 @@ def downloadFileFromAmazon(srcFile, destDirectory, config):
         logger.error("Download failed.")
         return None
 
-    localFile = os.path.join(destDirectory, os.path.basename(srcFile))
     if os.access(localFile, os.R_OK) is False:
-        logger.error("Download completed, but file is not locally accessible.")
+        logger.error("Download %s completed, but file is not locally (%s) accessible.",
+                     srcFile, localFile)
         return None
 
     logger.info("Download complete.")
@@ -533,11 +540,11 @@ def is_subset(hom_gt, het_gt):
 def isFileInAmazon(srcFile, config):
     ''' Check if a file is in S3 '''
     cmd = [config.aws, "s3", "ls", srcFile]
-    logger.debug("Executing %s", "".join(cmd))
+    logger.debug("Executing %s", cmd)
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = p.communicate()
     p.wait()
-    logger.debug("Received %s", out)
+    logger.debug("Received: %s", out)
     lines = out.splitlines()
     for line in lines:
         fields = line.split()
