@@ -198,6 +198,8 @@ def compareGenotypes(var_list, var_list2, intersection, alternate_chroms, def_to
             else:
                 allele_subset = "1sub2"
                 frac_common_plus = float(ct_common + diff_1sub2_ct) / total_compared
+    else:
+        pv_ = "NA"
 
     results = {}
     results['total_compared'] = total_compared
@@ -214,6 +216,7 @@ def compareGenotypes(var_list, var_list2, intersection, alternate_chroms, def_to
     results['diff_1sub2_ct'] = diff_1sub2_ct
     results['diff_2sub1_ct'] = diff_2sub1_ct
     results['allele_subset'] = allele_subset
+    results['pvalue'] = pv_
     results['judgement'], results['short_judgement'] = makeJudgement(total_compared,
                                                                      frac_common,
                                                                      frac_common_plus,
@@ -231,6 +234,7 @@ def compareSamples(sampleSet1, sampleSet2, config):
     frac_common_matrix = {}
     total_compared_matrix = {}
     short_judgement = {}
+    probably_matrix = {}
     judgement = {}
     if os.path.exists(config.report_file) is True:
         logger.warn("%s already exists.  Skipping this step.", config.report_file)
@@ -274,12 +278,15 @@ def compareSamples(sampleSet1, sampleSet2, config):
                 total_compared_matrix[sample1["name"]] = {}
                 short_judgement[sample1["name"]] = {}
                 judgement[sample1["name"]] = {}
+		probably_matrix[sample1["name"]] = {}
+
             frac_common_matrix[sample1["name"]][sample2["name"]] = results['frac_common']
             total_compared_matrix[sample1["name"]][sample2["name"]] = results['total_compared']
             short_judgement[sample1["name"]][sample2["name"]] = results['short_judgement']
             judgement[sample1["name"]][sample2["name"]] = results['judgement']
+            probably_matrix[sample1["name"]][sample2["name"]] = results['pvalue']
     writeSimilarityMatrix(config, sampleSet1, sampleSet2, frac_common_matrix,
-                          total_compared_matrix, judgement)
+                          total_compared_matrix, probably_matrix, judgement)
     return True
 
 def downloadBAMFile(bamFile, config):
@@ -958,7 +965,7 @@ CONCLUSION:
             fout.write(std_report_str)
 
 def writeSimilarityMatrix(config, sampleSet1, sampleSet2, frac_common_matrix,
-                          total_compared_matrix, judgement):
+                          total_compared_matrix, probably_matrix, judgement):
     ''' print out grand matrix '''
     resultsFile = "{}.txt".format(config.output_prefix)
     totalComparedFile = "{}.total_compared.txt".format(config.output_prefix)
@@ -991,7 +998,8 @@ def writeSimilarityMatrix(config, sampleSet1, sampleSet2, frac_common_matrix,
                 fm = '%.4f' % frac_common_matrix[sample1["name"]][sample2["name"]]
                 tc = '%d' % total_compared_matrix[sample1["name"]][sample2["name"]]
                 j = judgement[sample1["name"]][sample2["name"]]
-                fout.write(sample1["name"]+"\t"+sample2["name"]+"\t"+fm+"\t"+tc+"\t"+j+"\n")
+                probability = probably_matrix[sample1["name"]][sample2["name"]]
+                fout.write(sample1["name"]+"\t"+sample2["name"]+"\t"+fm+"\t"+tc+"\t"+j+"\t"+probability+\n")
 
 if __name__ == "__main__":
     main(sys.argv[1:])
